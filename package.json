@@ -1,0 +1,18 @@
+{
+  "name": "virtual-waynitor",
+  "version": "1.0.0",
+  "description": "Headless virtual monitor for Hyprland with WebRTC browser streaming",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["hyprland", "wayland", "virtual-monitor", "webrtc", "pipewire"],
+  "license": "MIT"
+}

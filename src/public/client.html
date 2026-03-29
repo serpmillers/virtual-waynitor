@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Waynitor — Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #080a0f;
+      --accent:  #4f8ef7;
+      --green:   #34d399;
+      --red:     #f87171;
+      --yellow:  #fbbf24;
+      --text:    #e2e8f0;
+      --muted:   #6b7a99;
+      --font:    'Inter', sans-serif;
+      --mono:    'JetBrains Mono', monospace;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+
+    /* ── Video fills viewport ── */
+    #video-wrap {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #000;
+    }
+    #remoteVideo {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      transition: opacity .4s;
+    }
+    #remoteVideo.hidden { opacity: 0; }
+
+    /* ── Overlay HUD ── */
+    #hud {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+    }
+
+    /* ── Connection banner (center) ── */
+    #connection-banner {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+      pointer-events: none;
+      transition: opacity .4s;
+    }
+    #connection-banner.hidden { opacity: 0; }
+
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(79,142,247,.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .banner-title {
+      font-size: 18px; font-weight: 600; color: var(--text);
+      text-align: center;
+    }
+    .banner-sub {
+      font-size: 13px; color: var(--muted);
+      text-align: center; max-width: 280px; line-height: 1.6;
+    }
+
+    /* ── Bottom bar ── */
+    #bottom-bar {
+      pointer-events: all;
+      margin: 0 auto 24px;
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(11,13,18,.82);
+      border: 1px solid rgba(255,255,255,.07);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 99px;
+      padding: 8px 16px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity .3s;
+      max-width: 520px;
+    }
+    #bottom-bar.visible { opacity: 1; }
+    body:hover #bottom-bar { opacity: 1; }
+
+    .hud-stat {
+      display: flex; align-items: center; gap: 5px;
+      color: var(--muted);
+    }
+    .hud-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    .hud-dot.live {
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .hud-sep { color: rgba(255,255,255,.1); }
+
+    .hud-val { color: var(--text); font-family: var(--mono); }
+
+    #btn-fs {
+      margin-left: auto;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font);
+      transition: background .15s, color .15s;
+    }
+    #btn-fs:hover { background: rgba(255,255,255,.12); color: var(--text); }
+
+    /* ── Top toast notifications ── */
+    #toasts {
+      position: fixed; top: 16px; right: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      pointer-events: none; z-index: 100;
+    }
+    .toast {
+      padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 500;
+      backdrop-filter: blur(12px);
+      animation: slideIn .25s ease;
+    }
+    @keyframes slideIn { from { opacity:0; transform: translateX(16px); } }
+    .toast-info   { background: rgba(79,142,247,.18); border:1px solid rgba(79,142,247,.3); color:#93c5fd; }
+    .toast-ok     { background: rgba(52,211,153,.18); border:1px solid rgba(52,211,153,.3); color:#6ee7b7; }
+    .toast-warn   { background: rgba(251,191,36,.18); border:1px solid rgba(251,191,36,.3); color:#fde68a; }
+    .toast-err    { background: rgba(248,113,113,.18); border:1px solid rgba(248,113,113,.3); color:#fca5a5; }
+  </style>
+</head>
+<body>
+
+<div id="video-wrap">
+  <video id="remoteVideo" autoplay playsinline class="hidden"></video>
+</div>
+
+<div id="hud">
+  <div id="bottom-bar">
+    <div class="hud-stat">
+      <div class="hud-dot" id="hud-live-dot"></div>
+      <span id="hud-status">Connecting…</span>
+    </div>
+    <span class="hud-sep">|</span>
+    <div class="hud-stat">
+      <span class="hud-val" id="hud-res">—</span>
+    </div>
+    <span class="hud-sep">|</span>
+    <div class="hud-stat">
+      <span>Latency</span>&nbsp;<span class="hud-val" id="hud-latency">—</span>
+    </div>
+    <button id="btn-fs" onclick="toggleFS()">⛶ Fullscreen</button>
+  </div>
+</div>
+
+<div id="connection-banner">
+  <div class="spinner"></div>
+  <div class="banner-title" id="banner-title">Connecting to host…</div>
+  <div class="banner-sub" id="banner-sub">Make sure the host has started streaming on this machine.</div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+'use strict';
+
+    // ── Shared state ──────────────────────────────────────────────────────────────
+const video       = document.getElementById('remoteVideo');
+const banner      = document.getElementById('connection-banner');
+const bannerTitle = document.getElementById('banner-title');
+const bannerSub   = document.getElementById('banner-sub');
+const bottomBar   = document.getElementById('bottom-bar');
+const hudStatus   = document.getElementById('hud-status');
+const hudDot      = document.getElementById('hud-live-dot');
+const hudRes      = document.getElementById('hud-res');
+const hudLatency  = document.getElementById('hud-latency');
+
+// ICE server list used for WebRTC peer negotiation.
+// STUN servers allow peers behind NAT to discover their public address.
+// Add TURN server entries here if direct P2P fails across different networks.
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+let ws = null;            // WebSocket connection to the signaling server
+let pc = null;            // Active RTCPeerConnection (null when not receiving)
+let statsInterval = null; // setInterval handle for the HUD stats poller
+
+// ── Toast notifications ───────────────────────────────
+// Shows a short-lived notification in the top-right corner. type: 'info' | 'ok' | 'warn' | 'err'────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info', ttl = 4000) {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(() => t.remove(), ttl);
+}
+
+// ── Connection banner ──────────────────────────
+// The large centered overlay shown while waiting for the host or P2P handshake.───────────────────────────────────────────────────────────────────
+function setBanner(title, sub, hide = false) {
+  bannerTitle.textContent = title;
+  bannerSub.textContent   = sub;
+  banner.classList.toggle('hidden', hide);
+}
+
+// ── HUD stats poller ──────────────────────────
+// Polls RTCPeerConnection.getStats() every second to update the bottom HUD
+// with live resolution, framerate, and round-trip latency.─────────────────────────────────────────────────────────────
+function startStats() {
+  stopStats();
+  statsInterval = setInterval(async () => {
+    if (!pc) return;
+    try {
+      const stats = await pc.getStats();
+      let rtt = null, w = null, h = null, fps = null;
+      stats.forEach(r => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') rtt = r.currentRoundTripTime;
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          w   = r.frameWidth;
+          h   = r.frameHeight;
+          fps = Math.round(r.framesPerSecond || 0);
+        }
+      });
+      if (w && h) hudRes.textContent = `${w}×${h}${fps ? ` @ ${fps}fps` : ''}`;
+      hudLatency.textContent = rtt != null ? `${Math.round(rtt * 1000)}ms` : '—';
+    } catch {}
+  }, 1000);
+}
+
+// Stops the stats polling interval and is also called on disconnect.
+function stopStats() {
+  if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+}
+
+// ── WebSocket connection + WebRTC receive ──────────
+// Registers as a viewer, waits for the host's SDP offer, completes the
+// WebRTC handshake, and attaches incoming video tracks to the player.───────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'register', role: 'viewer' }));
+  };
+
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+
+    // Initial state: tells the viewer whether a host is already streaming.
+    if (msg.type === 'info') {
+      if (!msg.hostPresent) {
+        setBanner('Waiting for host…', 'The host hasn\'t started streaming yet. This page will auto-connect.');
+      } else {
+        setBanner('Host found!', 'Establishing connection…');
+      }
+    }
+
+    // Host came online while the viewer was already connected.
+    if (msg.type === 'host-joined') {
+      setBanner('Host connected', 'Waiting for stream offer…');
+      toast('Host is online ✔', 'ok');
+    }
+
+    // Host disconnected — reset state and wait for reconnection.
+    if (msg.type === 'host-left') {
+      setBanner('Host disconnected', 'Waiting for host to reconnect…');
+      setReceiving(false);
+      toast('Host disconnected', 'warn');
+      pc?.close(); pc = null;
+      stopStats();
+    }
+
+    // Incoming SDP offer from the host — create a peer connection and answer.
+    if (msg.type === 'offer') {
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      // Attach incoming media tracks to the video element.
+      pc.ontrack = (e) => {
+        video.srcObject = e.streams[0];
+        video.classList.remove('hidden');
+        banner.classList.add('hidden');
+        bottomBar.classList.add('visible');
+        setReceiving(true);
+        startStats();
+        toast('Stream started ✔', 'ok');
+      };
+
+      // Forward locally discovered ICE candidates to the host.
+      pc.onicecandidate = (e) => {
+        if (e.candidate && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+        }
+      };
+
+      // Update the HUD live indicator when the connection state changes.
+      pc.onconnectionstatechange = () => {
+        const s = pc.connectionState;
+        if (s === 'connected') {
+          hudStatus.textContent = 'Live';
+          hudDot.classList.add('live');
+        } else if (s === 'disconnected' || s === 'failed') {
+          setReceiving(false);
+          toast(`P2P ${s}`, 'warn');
+        }
+      };
+
+      // Complete the WebRTC handshake: apply the offer, create and send an answer.
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
+    }
+
+    // Relay ICE candidates from the host to our peer connection.
+    if (msg.type === 'ice-candidate' && msg.candidate && pc) {
+      await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    }
+  };
+
+  ws.onclose = () => {
+    setBanner('Reconnecting…', 'Lost connection to signaling server.');
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => toast('WebSocket error', 'err');
+}
+
+// Resets the video element and HUD when the stream ends or host disconnects.
+function setReceiving(on) {
+  hudStatus.textContent = on ? 'Live' : 'Disconnected';
+  hudDot.classList.toggle('live', on);
+  if (!on) {
+    video.classList.add('hidden');
+    video.srcObject = null;
+    hudRes.textContent     = '—';
+    hudLatency.textContent = '—';
+  }
+}
+
+// ── Fullscreen ──────────────────────────────────────────────────────────────
+// Toggles the browser's native fullscreen mode. Also triggered by double-click.──
+function toggleFS() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+document.addEventListener('dblclick', toggleFS);
+
+// ── Startup ───────────────────────────────────────────────────────────────────
+// Connect to the signaling server immediately on page load.─
+connect();
+</script>
+</body>
+</html>

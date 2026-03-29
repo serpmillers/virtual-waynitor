@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Waynitor — Host</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0b0d12;
+      --bg-card: #111520;
+      --bg-raised: #161b28;
+      --border: #1e2535;
+      --accent: #4f8ef7;
+      --accent-lo: rgba(79, 142, 247, .12);
+      --green: #34d399;
+      --green-lo: rgba(52, 211, 153, .12);
+      --red: #f87171;
+      --red-lo: rgba(248, 113, 113, .12);
+      --yellow: #fbbf24;
+      --text: #e2e8f0;
+      --text-muted: #6b7a99;
+      --font: 'Inter', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --radius: 12px;
+      --shadow: 0 8px 32px rgba(0, 0, 0, .45);
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      grid-template-columns: 320px 1fr;
+      grid-template-areas:
+        "topbar topbar"
+        "sidebar main";
+      min-height: 100vh;
+    }
+
+    /* ── Topbar ── */
+    #topbar {
+      grid-area: topbar;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: .03em;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #4f8ef7, #a78bfa);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .badge-host {
+      background: var(--accent-lo);
+      color: var(--accent);
+    }
+
+    #viewer-count-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .dot.live {
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .4;
+      }
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      grid-area: sidebar;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 16px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 0 4px;
+      margin-bottom: 4px;
+    }
+
+    /* ── Status card ── */
+    .status-card {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 5px 0;
+    }
+
+    .status-row+.status-row {
+      border-top: 1px solid var(--border);
+    }
+
+    .status-key {
+      color: var(--text-muted);
+    }
+
+    .status-val {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .val-ok {
+      color: var(--green);
+    }
+
+    .val-err {
+      color: var(--red);
+    }
+
+    .val-dim {
+      color: var(--text-muted);
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4f8ef7, #7c63f5);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(79, 142, 247, .3);
+    }
+
+    .btn-primary:not(:disabled):hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 142, 247, .45);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #34d399, #059669);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(52, 211, 153, .3);
+    }
+
+    .btn-success:not(:disabled):hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(52, 211, 153, .4);
+    }
+
+    .btn-danger {
+      background: var(--red-lo);
+      border: 1px solid rgba(248, 113, 113, .25);
+      color: var(--red);
+    }
+
+    .btn-danger:not(:disabled):hover {
+      background: rgba(248, 113, 113, .2);
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ── Window list ── */
+    .window-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .window-item {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: border-color .15s;
+    }
+
+    .window-item:hover {
+      border-color: var(--accent);
+    }
+
+    .window-title {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .window-class {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .btn-move-win {
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--accent-lo);
+      color: var(--accent);
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s;
+      font-family: var(--font);
+    }
+
+    .btn-move-win:hover {
+      background: rgba(79, 142, 247, .22);
+    }
+
+    .empty-state {
+      color: var(--text-muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 16px;
+    }
+
+    /* ── Main area ── */
+    #main {
+      grid-area: main;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    /* ── Log ── */
+    #log {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text-muted);
+      max-height: 160px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .log-line {
+      display: flex;
+      gap: 10px;
+    }
+
+    .log-time {
+      color: #3a4560;
+      flex-shrink: 0;
+    }
+
+    .log-ok {
+      color: var(--green);
+    }
+
+    .log-warn {
+      color: var(--yellow);
+    }
+
+    .log-err {
+      color: var(--red);
+    }
+
+    .log-info {
+      color: var(--accent);
+    }
+
+    /* ── Preview ── */
+    #preview-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-height: 300px;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .preview-inner {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      position: relative;
+    }
+
+    #preview {
+      max-width: 100%;
+      max-height: 100%;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .preview-placeholder svg {
+      opacity: .3;
+    }
+
+    #overlay-placeholder {
+      position: absolute;
+      transition: opacity .3s;
+      pointer-events: none;
+    }
+
+    #overlay-placeholder.hidden {
+      opacity: 0;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Topbar ─────────────────────────────────────────────────── -->
+  <header id="topbar">
+    <div class="logo">
+      <div class="logo-icon">🖥</div>
+      Virtual Waynitor
+      <span class="badge badge-host">Host</span>
+    </div>
+    <div id="viewer-count-badge">
+      <div class="dot" id="live-dot"></div>
+      <span id="viewer-label">0 viewers</span>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ────────────────────────────────────────────────── -->
+  <aside id="sidebar">
+
+    <div>
+      <div class="section-label">Monitor Status</div>
+      <div class="status-card">
+        <div class="status-row">
+          <span class="status-key">HEADLESS</span>
+          <span class="status-val" id="st-headless">checking…</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Streaming</span>
+          <span class="status-val" id="st-streaming">idle</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Viewers</span>
+          <span class="status-val" id="st-viewers">0</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Capture</span>
+          <span class="status-val" id="st-capture">none</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Controls</div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="captureBtn">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+          Capture HEADLESS
+        </button>
+        <button class="btn btn-success" id="streamBtn" disabled>
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          Start Streaming
+        </button>
+        <button class="btn btn-danger" id="stopBtn" disabled>
+          <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+          Stop
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Windows on HEADLESS</div>
+      <div id="window-list" class="window-list">
+        <div class="empty-state">No windows on virtual monitor</div>
+      </div>
+      <div style="margin-top:8px;">
+        <button class="btn"
+          style="background:var(--bg-raised);border:1px solid var(--border);color:var(--text-muted);font-size:12px;padding:8px;"
+          id="refreshWindowsBtn">
+          ↻ Refresh Windows
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Quick Links</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <a href="/client" target="_blank"
+          style="font-size:12px;color:var(--accent);text-decoration:none;padding:8px 12px;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          Open Viewer Page
+        </a>
+        <a href="/api/status" target="_blank"
+          style="font-size:12px;color:var(--text-muted);text-decoration:none;padding:8px 12px;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          API Status
+        </a>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────────────────── -->
+  <main id="main">
+
+    <div id="preview-section">
+      <div class="preview-header">
+        <span>Preview</span>
+        <span id="preview-res" style="font-size:12px;color:var(--text-muted);font-family:var(--mono);">—</span>
+      </div>
+      <div class="preview-inner">
+        <video id="preview" autoplay muted playsinline style="display:none;"></video>
+        <div id="overlay-placeholder" class="preview-placeholder">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+          <span>Click <strong>Capture HEADLESS</strong> to start</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="log" aria-label="Activity log"></div>
+
+  </main>
+
+  <script>
+    'use strict';
+
+    // ── Shared state ──────────────────────────────────────────────────────────────
+    // ws     — the WebSocket connection to the signaling server
+    // pc     — the active RTCPeerConnection (null when not streaming)
+    // stream — the MediaStream obtained from getDisplayMedia
+    let ws = null;
+    let pc = null;
+    let stream = null;
+    let viewers = 0;      // viewer count reported by the signaling server
+    let streaming = false; // true once the P2P connection reaches 'connected'
+
+    // ICE server list used for WebRTC peer negotiation.
+    // STUN servers allow peers behind NAT to discover their public address.
+    // Add TURN server entries here if direct P2P fails across different networks.
+    const ICE_SERVERS = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+
+    // ── DOM references ────────────────────────────────────────────────────────────
+    const captureBtn    = document.getElementById('captureBtn');
+    const streamBtn     = document.getElementById('streamBtn');
+    const stopBtn       = document.getElementById('stopBtn');
+    const refreshWinBtn = document.getElementById('refreshWindowsBtn');
+    const preview       = document.getElementById('preview');
+    const placeholder   = document.getElementById('overlay-placeholder');
+    const previewRes    = document.getElementById('preview-res');
+    const logEl         = document.getElementById('log');
+    const liveDot       = document.getElementById('live-dot');
+    const viewerLabel   = document.getElementById('viewer-label');
+
+    // ── Logging ──────────────────────────────────────────────────────────────────
+    // Appends a timestamped line to the activity log panel.
+    // type: 'info' | 'ok' | 'warn' | 'err'
+    function log(msg, type = 'info') {
+      const now = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = `<span class="log-time">${now}</span><span class="log-${type}">${msg}</span>`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // ── Sidebar status cards ──────────────────────────────────────────────────────
+    // Updates a status row value and applies the appropriate colour class.
+    function setSt(id, text, cls) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'status-val ' + (cls || '');
+    }
+
+    // Polls /api/status and updates the sidebar monitor/streaming/viewer indicators.
+    async function refreshStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        setSt('st-headless', d.headless ? 'active' : 'not found', d.headless ? 'val-ok' : 'val-err');
+        setSt('st-streaming', streaming ? 'live' : 'idle', streaming ? 'val-ok' : 'val-dim');
+        setSt('st-viewers', d.viewers || 0, d.viewers > 0 ? 'val-ok' : 'val-dim');
+      } catch {
+        setSt('st-headless', 'error', 'val-err');
+      }
+    }
+
+    // ── Window list ───────────────────────────────────────────────────────────────
+    // Fetches the list of windows currently on the HEADLESS monitor from the
+    // server API and renders them in the sidebar. Each entry has a button that
+    // moves the window to workspace 10 on the headless output.
+    async function refreshWindows() {
+      const list = document.getElementById('window-list');
+      try {
+        const r = await fetch('/api/windows');
+        const wins = await r.json();
+        if (!wins.length) {
+          list.innerHTML = '<div class="empty-state">No windows on virtual monitor</div>';
+          return;
+        }
+        list.innerHTML = wins.map(w => `
+      <div class="window-item">
+        <div>
+          <div class="window-title" title="${w.title || ''}">${w.title || 'Unnamed'}</div>
+          <div class="window-class">${w.class || ''}</div>
+        </div>
+        <button class="btn-move-win" onclick="moveWindow('${w.address}')">⬡ WS10</button>
+      </div>
+    `).join('');
+      } catch {
+        list.innerHTML = '<div class="empty-state" style="color:var(--red)">Failed to fetch windows</div>';
+      }
+    }
+
+    // Sends a hyprctl dispatch to move the given window to workspace 10
+    // (the workspace bound to the headless monitor), then refreshes the list.
+    async function moveWindow(addr) {
+      await fetch('/api/move-window', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ windowAddress: addr, workspace: 10 }),
+      });
+      log(`Moved window ${addr.slice(0, 8)}… to workspace 10`, 'ok');
+      setTimeout(refreshWindows, 400);
+    }
+
+    // ── Screen capture ────────────────────────────────────────────────────────────
+    // Triggers the browser's display-picker (powered by xdg-desktop-portal-hyprland
+    // on Wayland). The user should select the HEADLESS-1 output or workspace 10.
+    // The captured MediaStream is stored in `stream` and previewed locally.
+    captureBtn.addEventListener('click', async () => {
+      // Stop any previous capture before starting a new one.
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      try {
+        log('Requesting display capture (select HEADLESS/workspace 10 in the picker)…', 'info');
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+          audio: false,
+        });
+        preview.srcObject = stream;
+        preview.style.display = '';
+        placeholder.classList.add('hidden');
+
+        // Display the actual captured resolution reported by the browser.
+        const vt = stream.getVideoTracks()[0];
+        const s  = vt.getSettings();
+        previewRes.textContent = `${s.width}×${s.height} @ ${Math.round(s.frameRate || 60)}fps`;
+        setSt('st-capture', `${s.width}×${s.height}`, 'val-ok');
+
+        streamBtn.disabled = false;
+        log('Screen captured ✔ — click Start Streaming to broadcast', 'ok');
+
+        // If the user stops sharing from the browser's native UI, clean up.
+        stream.getTracks()[0].addEventListener('ended', () => {
+          log('Capture ended (display disconnected)', 'warn');
+          stopAll();
+        });
+      } catch (e) {
+        log(`Capture error: ${e.message}`, 'err');
+      }
+    });
+
+    // ── WebSocket connection to the signaling server ──────────────────────────────
+    // The host registers itself so the server can route viewer messages to it.
+    // Reconnects automatically if the WebSocket drops.
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}`);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'register', role: 'host' }));
+        log('Connected to signaling server', 'info');
+      };
+
+      ws.onmessage = async (e) => {
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'error') { log(`Server: ${msg.message}`, 'err'); return; }
+
+        // Server keeps the host informed of how many viewers are connected.
+        if (msg.type === 'viewer-count') {
+          viewers = msg.count;
+          updateViewerBadge();
+          log(`Viewers: ${viewers}`, 'info');
+        }
+
+        // Initial state sent by the server right after registration.
+        if (msg.type === 'info') {
+          viewers = msg.viewers || 0;
+          updateViewerBadge();
+        }
+
+        // A viewer joined after streaming started — send them a fresh offer.
+        if (msg.type === 'viewer-ready' || msg.type === 'request-offer') {
+          sendOffer();
+        }
+
+        // The viewer accepted the offer — complete the WebRTC handshake.
+        if (msg.type === 'answer') {
+          if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          log('WebRTC answer received — establishing P2P', 'ok');
+        }
+
+        // Relay ICE candidates from viewers to our RTCPeerConnection.
+        if (msg.type === 'ice-candidate' && msg.candidate && pc) {
+          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        }
+      };
+
+      ws.onclose = () => {
+        log('WebSocket disconnected — reconnecting in 3s…', 'warn');
+        setTimeout(connectWS, 3000);
+      };
+      ws.onerror = () => log('WebSocket error', 'err');
+    }
+
+    // ── WebRTC offer ──────────────────────────────────────────────────────────────
+    // Creates a new RTCPeerConnection, attaches the captured stream tracks,
+    // and sends an SDP offer to all connected viewers via the signaling server.
+    async function sendOffer() {
+      if (!stream) return;
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      // Add each track from the captured stream to the peer connection.
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      // Forward locally discovered ICE candidates to the viewer(s).
+      pc.onicecandidate = (e) => {
+        if (e.candidate && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+        }
+      };
+
+      // Update the UI and streaming state when the P2P connection changes.
+      pc.onconnectionstatechange = () => {
+        log(`P2P state: ${pc.connectionState}`, pc.connectionState === 'connected' ? 'ok' : 'info');
+        if (pc.connectionState === 'connected') {
+          setSt('st-streaming', 'live', 'val-ok');
+          streaming = true;
+          streamBtn.disabled = true;
+          stopBtn.disabled = false;
+          liveDot.classList.add('live');
+        }
+      };
+
+      // Apply an encoder bitrate cap once the sender is set up.
+      // Targeting ~8 Mbps keeps 1080p60 smooth without saturating the link.
+      pc.onnegotiationneeded = async () => {
+        try {
+          const senders = pc.getSenders();
+          for (const s of senders) {
+            if (s.track?.kind === 'video') {
+              const p = s.getParameters();
+              if (!p.encodings?.length) p.encodings = [{}];
+              p.encodings[0].maxBitrate   = 8_000_000;
+              p.encodings[0].maxFramerate = 60;
+              await s.setParameters(p).catch(() => {});
+            }
+          }
+        } catch {}
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
+      log('Offer sent to viewer(s)…', 'info');
+    }
+
+    streamBtn.addEventListener('click', async () => {
+      if (!stream) { log('No capture active — click Capture first', 'warn'); return; }
+      streamBtn.disabled = true;
+      await sendOffer();
+    });
+
+    // Closes the peer connection and stops all capture tracks, returning the
+    // UI to its idle state.
+    function stopAll() {
+      if (pc) { pc.close(); pc = null; }
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      preview.srcObject = null;
+      preview.style.display = 'none';
+      placeholder.classList.remove('hidden');
+      previewRes.textContent = '—';
+      streaming = false;
+      liveDot.classList.remove('live');
+      streamBtn.disabled = false;
+      stopBtn.disabled = true;
+      setSt('st-streaming', 'idle', 'val-dim');
+      setSt('st-capture', 'none', 'val-dim');
+      log('Stream stopped', 'warn');
+    }
+
+    stopBtn.addEventListener('click', stopAll);
+
+    // Updates the topbar viewer count badge and the live indicator dot.
+    function updateViewerBadge() {
+      viewerLabel.textContent = viewers === 1 ? '1 viewer' : `${viewers} viewers`;
+      setSt('st-viewers', viewers, viewers > 0 ? 'val-ok' : 'val-dim');
+      if (viewers > 0) liveDot.classList.add('live');
+      else if (!streaming) liveDot.classList.remove('live');
+    }
+
+    refreshWinBtn.addEventListener('click', refreshWindows);
+
+    // ── Startup ───────────────────────────────────────────────────────────────────
+    // Connect to signaling, fetch initial status, and start polling intervals.
+    connectWS();
+    refreshStatus();
+    refreshWindows();
+    setInterval(refreshStatus,  5000); // keep monitor/streaming status current
+    setInterval(refreshWindows, 8000); // keep window list current
+  </script>
+</body>
+
+</html>
