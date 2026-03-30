@@ -22,6 +22,12 @@ const { execSync, exec } = require('child_process');
 const PORT   = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 
+// ── Firewall management state ─────────────────────────────────────────────────
+// Detects and manages firewall rules (firewalld/ufw) to allow WebRTC P2P
+// connections from other devices on the LAN.
+let activeFirewall = null;
+let portsOpened    = false;
+
 // ── Connection state ──────────────────────────────────────────────────────────
 // Only one host is allowed at a time; any number of viewers can connect.
 let hostSocket = null;
@@ -354,14 +360,73 @@ function ensureHeadlessMonitor() {
   }, 1000);
 }
 
+// ── Firewall lifecycle ────────────────────────────────────────────────────────
+
+function detectFirewall() {
+  try {
+    if (execSync('systemctl is-active firewalld 2>/dev/null || true').toString().trim() === 'active') {
+      return 'firewalld';
+    }
+  } catch {}
+
+  try {
+    if (execSync('command -v ufw 2>/dev/null && sudo ufw status 2>/dev/null || true').toString().includes('Status: active')) {
+      return 'ufw';
+    }
+  } catch {}
+
+  return null;
+}
+
+function manageFirewall(open) {
+  if (!activeFirewall) return;
+
+  const actionStr = open ? 'Opening' : 'Closing';
+  console.log(`  [sudo] ${actionStr} firewall ports for WebRTC (${activeFirewall})…`);
+
+  try {
+    // Only prompt for sudo if we are trying to open (at startup).
+    // On shutdown, sudo privileges usually persist via timeout, but if they
+    // expired, the teardown will gracefully fail and print a warning.
+    if (open) {
+      execSync('sudo -v', { stdio: 'inherit' });
+    }
+
+    if (activeFirewall === 'firewalld') {
+      const mode = open ? '--add-port' : '--remove-port';
+      execSync(`sudo firewall-cmd ${mode}=${PORT}/tcp`, { stdio: 'ignore' });
+      execSync(`sudo firewall-cmd ${mode}=49152-65535/udp`, { stdio: 'ignore' });
+    } else if (activeFirewall === 'ufw') {
+      const mode = open ? 'allow' : 'delete allow';
+      execSync(`sudo ufw ${mode} ${PORT}/tcp`, { stdio: 'ignore' });
+      execSync(`sudo ufw ${mode} 49152:65535/udp`, { stdio: 'ignore' });
+    }
+
+    portsOpened = open;
+    if (open) console.log(`  Ports: ✔ ${PORT}/tcp (Web), 49152-65535/udp (WebRTC)`);
+  } catch (e) {
+    if (open) {
+      console.warn('  [warn] Failed to open firewall ports. LAN streaming may fail.');
+    } else {
+      console.warn('  [warn] Failed to close firewall ports. You may need to remove them manually.');
+    }
+  }
+}
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 //
 // On SIGINT/SIGTERM the server disables the headless monitor rather than
 // removing it. Disabling preserves the internal output ID so the HEADLESS-*
 // counter does not increment each time the server restarts.
+// It also closes any firewall ports that were opened during startup.
 
 function shutdown(signal) {
   console.log(`\n  [${signal}] Shutting down…`);
+
+  if (portsOpened) {
+    manageFirewall(false);
+  }
+
   if (weCreatedHeadless && activeHeadless) {
     try {
       execSync(`hyprctl keyword monitor ${activeHeadless.name},disable`, { timeout: 2000 });
@@ -378,6 +443,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
+// 1. Check for firewall before booting HTTP
+activeFirewall = detectFirewall();
+
+if (activeFirewall) {
+  console.log(`\n  [i] Firewall detected: ${activeFirewall}`);
+  console.log('      virtual-waynitor needs to temporarily open ports for WebRTC streaming.');
+  manageFirewall(true);
+}
+
 httpServer.listen(PORT, () => {
   console.log('\n  ╔══════════════════════════════════════════╗');
   console.log('  ║       virtual-waynitor server            ║');
@@ -385,6 +459,7 @@ httpServer.listen(PORT, () => {
   console.log(`\n  Host page  →  http://localhost:${PORT}/`);
   console.log(`  Viewer     →  http://localhost:${PORT}/client`);
   console.log(`  API status →  http://localhost:${PORT}/api/status\n`);
+
   ensureHeadlessMonitor();
   console.log('');
 });
